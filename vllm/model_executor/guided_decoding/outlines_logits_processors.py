@@ -21,7 +21,7 @@ import math
 from collections import defaultdict
 from collections.abc import Hashable, Iterable
 from functools import lru_cache
-from typing import Any, Callable, DefaultDict, Dict, List, Union
+from typing import Any, Callable, DefaultDict, Dict, List, Optional, Union
 
 import torch
 from outlines import grammars
@@ -33,6 +33,8 @@ from outlines_core.fsm.json_schema import build_regex_from_schema
 from pydantic import BaseModel
 from transformers import PreTrainedTokenizerBase
 
+from vllm.logger import init_logger
+from vllm.model_executor.guided_decoding.reasoner import Reasoner
 
 # Unfortunately we cannot use lru_cache as it breaks pickling
 # so we use a simpler implementation
@@ -65,11 +67,14 @@ def _cached(fn):
 
     return cached_fn
 
+logger = init_logger(__name__)
+
 
 class BaseLogitsProcessor:
 
-    def __init__(self, guide: Guide):
+    def __init__(self, guide: Guide, reasoner: Optional[Reasoner]):
         self._guide: Guide = guide
+        self._reasoner = reasoner
         # CFGState is used for the FSM state for CFGGuide
         self._fsm_state: DefaultDict[int, Union[int,
                                                 CFGState]] = defaultdict(int)
@@ -104,6 +109,14 @@ class BaseLogitsProcessor:
     def __call__(self, input_ids: List[int],
                  scores: torch.Tensor) -> torch.Tensor:
         """Use the FSM to bias the logits before sampling the next token."""
+
+        # Skip the structured logits processing if reasoning is not finished.
+        # reasoner is not None only when `--enable-reasoning` is set.
+        if self._reasoner is not None and \
+        not self._reasoner.is_reasoning_end(
+                input_ids):
+            return scores
+
         seq_id = hash(tuple(input_ids))
 
         if len(input_ids) > 0:
@@ -143,7 +156,12 @@ class RegexLogitsProcessor(BaseLogitsProcessor):
         tokenizer = _adapt_tokenizer(tokenizer)
         return RegexGuide.from_regex(regex_string, tokenizer)
 
-    def __init__(self, regex_string: str, tokenizer: PreTrainedTokenizerBase):
+    def __init__(
+        self,
+        regex_string: str,
+        tokenizer: PreTrainedTokenizerBase,
+        reasoner: Optional[Reasoner],
+    ):
         """Compile the FSM that drives the regex-structured generation.
 
         Parameters
@@ -155,14 +173,15 @@ class RegexLogitsProcessor(BaseLogitsProcessor):
 
         """
         super().__init__(
-            RegexLogitsProcessor._get_guide(regex_string, tokenizer))
+            RegexLogitsProcessor._get_guide(regex_string, tokenizer), reasoner)
 
 
 class JSONLogitsProcessor(RegexLogitsProcessor):
 
     def __init__(self, schema: Union[str, Dict, BaseModel],
                  tokenizer: PreTrainedTokenizerBase,
-                 whitespace_pattern: Union[str, None]):
+                 whitespace_pattern: Union[str, None],
+                 reasoner: Optional[Reasoner]):
         """Compile the FSM that drives the JSON-guided generation.
 
         Parameters
@@ -190,7 +209,7 @@ class JSONLogitsProcessor(RegexLogitsProcessor):
                 f"a Pydantic object, a dictionary or a string that contains "
                 f"the JSON Schema specification")
         regex_string = build_regex_from_schema(schema_str, whitespace_pattern)
-        super().__init__(regex_string, tokenizer)
+        super().__init__(regex_string, tokenizer, reasoner)
 
 
 class CFGLogitsProcessor(BaseLogitsProcessor):
@@ -201,7 +220,8 @@ class CFGLogitsProcessor(BaseLogitsProcessor):
         tokenizer = _adapt_tokenizer(tokenizer)
         return CFGGuide(cfg, tokenizer)
 
-    def __init__(self, cfg: str, tokenizer: PreTrainedTokenizerBase):
+    def __init__(self, cfg: str, tokenizer: PreTrainedTokenizerBase,
+                 reasoner: Optional[Reasoner]):
         """Compile the FSM that drives the context free grammar generation.
 
         Parameters
@@ -212,7 +232,8 @@ class CFGLogitsProcessor(BaseLogitsProcessor):
             The model's tokenizer
 
         """
-        super().__init__(CFGLogitsProcessor._get_guide(cfg, tokenizer))
+        super().__init__(CFGLogitsProcessor._get_guide(cfg, tokenizer),
+                         reasoner)
         self._guide = self._guide.copy()
 
 
