@@ -106,6 +106,7 @@ async def get_guided_decoding_logits_processor(
     reasoner = get_reasoner(tokenizer, reasoning_backend)
 
     guided_params = maybe_backend_fallback(guided_params)
+
     # CFG grammar not supported by LMFE, so we use outlines instead
     if guided_params.backend == 'outlines':
         # NOTE: lazy import outlines to avoid https://github.com/vllm-project/vllm/issues/4193
