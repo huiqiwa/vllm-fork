@@ -22,6 +22,7 @@ from vllm.logger import init_logger
 from vllm.model_executor.layers.quantization import QUANTIZATION_METHODS
 from vllm.platforms import current_platform
 from vllm.plugins import load_general_plugins
+from vllm.reasoning import ReasoningParserManager
 from vllm.transformers_utils.utils import check_gguf_file
 from vllm.usage.usage_lib import UsageContext
 from vllm.utils import FlexibleArgumentParser, StoreBoolean
@@ -1055,7 +1056,7 @@ class EngineArgs:
         parser.add_argument(
             "--reasoning-parser",
             type=str,
-            choices=["deepseek_r1"],
+            choices=list(ReasoningParserManager.reasoning_parsers),
             default=None,
             help=
             "Select the reasoning parser depending on the model that you're "
