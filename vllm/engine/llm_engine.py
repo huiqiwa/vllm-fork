@@ -2050,7 +2050,7 @@ class LLMEngine:
             guided_decoding.backend = guided_decoding.backend or \
                 self.decoding_config.guided_decoding_backend
 
-            if self.decoding_config.reasoning_backend is not None:
+            if self.decoding_config.reasoning_backend:
                 logger.debug("Building with reasoning backend %s",
                              self.decoding_config.reasoning_backend)
 

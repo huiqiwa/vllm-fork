@@ -211,8 +211,8 @@ class EngineArgs:
     calculate_kv_scales: Optional[bool] = None
 
     additional_config: Optional[Dict[str, Any]] = None
-    enable_reasoning: Optional[bool] = None
-    reasoning_parser: Optional[str] = None
+    enable_reasoning: Optional[bool] = None  # DEPRECATED
+    reasoning_parser: str = DecodingConfig.reasoning_backend
 
     def __post_init__(self):
         if not self.tokenizer:
@@ -1049,8 +1049,15 @@ class EngineArgs:
             "--enable-reasoning",
             action="store_true",
             default=False,
-            help="Whether to enable reasoning_content for the model. "
-            "If enabled, the model will be able to generate reasoning content."
+            help=
+            "[DEPRECATED] " \
+            "The --enable-reasoning flag is deprecated as of v0.8.6. "
+            "Use --reasoning-parser to specify " \
+            "the reasoning parser backend instead. "
+            "This flag (--enable-reasoning) will be " \
+            "removed in v0.10.0. "
+            "When --reasoning-parser is specified, " \
+            "reasoning mode is automatically enabled."
         )
 
         parser.add_argument(
@@ -1343,7 +1350,6 @@ class EngineArgs:
         decoding_config = DecodingConfig(
             guided_decoding_backend=self.guided_decoding_backend,
             reasoning_backend=self.reasoning_parser
-            if self.enable_reasoning else None,
         )
 
         detailed_trace_modules = []

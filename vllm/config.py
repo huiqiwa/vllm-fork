@@ -2661,7 +2661,9 @@ class DecodingConfig:
     # 'outlines' / 'lm-format-enforcer' / 'xgrammar'
     guided_decoding_backend: str = 'xgrammar'
 
-    reasoning_backend: Optional[str] = None
+    reasoning_backend: str = ""
+    """Select the reasoning parser depending on the model that you're using.
+    This is used to parse the reasoning content into OpenAI API format."""
 
     def compute_hash(self) -> str:
         """
