@@ -1,6 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
+from typing import Union
+
 from typing import NamedTuple
 
 import openai  # use the official client for correctness check
@@ -47,45 +49,20 @@ class TestCase(NamedTuple):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "test_case",
-    [
-        TestCase(model_name=MODEL_NAME,
-                 stream=True,
-                 tool_choice="auto",
-                 enable_thinking=False),
-        TestCase(model_name=MODEL_NAME,
-                 stream=False,
-                 tool_choice="auto",
-                 enable_thinking=False),
-        TestCase(model_name=MODEL_NAME,
-                 stream=True,
-                 tool_choice="required",
-                 enable_thinking=False),
-        TestCase(model_name=MODEL_NAME,
-                 stream=False,
-                 tool_choice="required",
-                 enable_thinking=False),
-        TestCase(model_name=MODEL_NAME,
-                 stream=True,
-                 tool_choice="auto",
-                 enable_thinking=True),
-        TestCase(model_name=MODEL_NAME,
-                 stream=False,
-                 tool_choice="auto",
-                 enable_thinking=True),
-        TestCase(model_name=MODEL_NAME,
-                 stream=True,
-                 tool_choice="required",
-                 enable_thinking=True),
-        TestCase(model_name=MODEL_NAME,
-                 stream=False,
-                 tool_choice="required",
-                 enable_thinking=True),
-    ],
-)
-async def test_function_tool_use(client: openai.AsyncOpenAI,
-                                 test_case: TestCase):
+@pytest.mark.parametrize("model_name", [MODEL_NAME])
+@pytest.mark.parametrize("stream", [True, False])
+@pytest.mark.parametrize("tool_choice", [
+    "auto", "required", {
+        "type": "function",
+        "function": {
+            "name": "get_current_weather"
+        }
+    }
+])
+@pytest.mark.parametrize("enable_thinking", [True, False])
+async def test_function_tool_use(client: openai.AsyncOpenAI, model_name: str,
+                                 stream: bool, tool_choice: Union[str, dict],
+                                 enable_thinking: bool):
     tools = [
         {
             "type": "function",
