@@ -3,6 +3,7 @@
 import asyncio
 import copy
 import functools
+import json
 import os
 import signal
 import subprocess
@@ -77,7 +78,8 @@ class RemoteOpenAIServer:
                  *,
                  env_dict: Optional[Dict[str, str]] = None,
                  auto_port: bool = True,
-                 max_wait_seconds: Optional[float] = None) -> None:
+                 max_wait_seconds: Optional[float] = None,
+                 override_hf_configs: Optional[dict[str, Any]] = None) -> None:
         if auto_port:
             if "-p" in vllm_serve_args or "--port" in vllm_serve_args:
                 raise ValueError("You have manually specified the port "
@@ -86,6 +88,12 @@ class RemoteOpenAIServer:
             # Don't mutate the input args
             vllm_serve_args = vllm_serve_args + [
                 "--port", str(get_open_port())
+            ]
+
+        if override_hf_configs is not None:
+            vllm_serve_args = vllm_serve_args + [
+                "--hf-overrides",
+                json.dumps(override_hf_configs)
             ]
 
         parser = FlexibleArgumentParser(
