@@ -62,6 +62,7 @@ from benchmark_dataset import (
     BurstGPTDataset,
     ConversationDataset,
     CustomDataset,
+    GSM8KDataset,
     HuggingFaceDataset,
     InstructCoderDataset,
     MTBenchDataset,
@@ -759,6 +760,15 @@ def main(args: argparse.Namespace):
                 output_len=args.random_output_len,
                 range_ratio=args.random_range_ratio,
             ),
+            "gsm8k": lambda: GSM8KDataset(
+                dataset_path=args.dataset_path,
+                random_seed=args.seed,
+                num_fewshot=args.gsm8k_num_fewshot,
+            ).sample(
+                tokenizer=tokenizer,
+                num_requests=args.num_prompts,
+                output_len=args.gsm8k_output_len,
+            ),
         }
 
         try:
@@ -927,6 +937,7 @@ if __name__ == "__main__":
             "hf",
             "custom",
             "random_image",
+            "gsm8k",
         ],
         help="Name of the dataset to benchmark on.",
     )
@@ -1214,6 +1225,19 @@ if __name__ == "__main__":
         default=None,
         help="Output length for each request. Overrides the output lengths "
         "from the sampled HF dataset.",
+    )
+    gsm8k_group = parser.add_argument_group("gsm8k dataset options")
+    gsm8k_group.add_argument(
+        "--gsm8k-num-fewshot",
+        type=int,
+        default=5,
+        help="Number of few-shot examples for GSM8K dataset. Default is 5.",
+    )
+    gsm8k_group.add_argument(
+        "--gsm8k-output-len",
+        type=int,
+        default=256,
+        help="Max output tokens per request for GSM8K dataset.",
     )
 
     sampling_group = parser.add_argument_group("sampling parameters")

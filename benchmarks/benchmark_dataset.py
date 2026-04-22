@@ -456,6 +456,169 @@ class RandomImageDataset(BenchmarkDataset):
 
 
 # -----------------------------------------------------------------------------
+# GSM8K Dataset Implementation
+# -----------------------------------------------------------------------------
+
+
+class GSM8KDataset(BenchmarkDataset):
+    """
+    Implements the GSM8K dataset with few-shot prompting (default 5-shot),
+    following the lm-evaluation-harness format.
+
+    Expects a local copy of the GSM8K dataset. The dataset_path should point
+    to the directory containing the parquet/json files downloaded from
+    HuggingFace (openai/gsm8k), or directly to a jsonl/json file.
+
+    Each sample is formatted as:
+        Question: <fewshot_q1>
+        Answer: <fewshot_a1>
+        ...
+        Question: <test_q>
+        Answer:
+    """
+
+    def __init__(self, num_fewshot: int = 5, **kwargs) -> None:
+        super().__init__(**kwargs)
+        self.num_fewshot = num_fewshot
+        self.load_data()
+
+    def load_data(self) -> None:
+        if self.dataset_path is None:
+            raise ValueError(
+                "dataset_path must be provided for GSM8K dataset. "
+                "Please download the dataset from HuggingFace (openai/gsm8k) "
+                "and provide the path."
+            )
+
+        path = self.dataset_path
+        # Support loading from a directory (HF dataset cache) or a file
+        import os
+        if os.path.isdir(path):
+            # Try to load using HuggingFace datasets from local dir
+            from datasets import load_from_disk
+            try:
+                ds = load_from_disk(path)
+                if hasattr(ds, 'keys'):
+                    # DatasetDict
+                    self.train_data = [x for x in ds['train']]
+                    self.test_data = [x for x in ds['test']]
+                else:
+                    # Single split - treat all as test, use first N as fewshot
+                    all_data = [x for x in ds]
+                    self.train_data = all_data
+                    self.test_data = all_data
+            except Exception:
+                # Try loading parquet files
+                import glob
+                train_files = glob.glob(os.path.join(path, '*train*'))
+                test_files = glob.glob(os.path.join(path, '*test*'))
+                if train_files and test_files:
+                    train_ds = load_dataset('parquet',
+                                           data_files=train_files,
+                                           split='train')
+                    test_ds = load_dataset('parquet',
+                                          data_files=test_files,
+                                          split='train')
+                    self.train_data = [x for x in train_ds]
+                    self.test_data = [x for x in test_ds]
+                else:
+                    raise ValueError(
+                        f"Cannot load GSM8K data from directory: {path}. "
+                        "Expected a HF dataset directory or parquet files."
+                    )
+        elif path.endswith('.jsonl'):
+            # Load from JSONL file - treat as test, first entries as fewshot
+            data = []
+            with open(path, 'r', encoding='utf-8') as f:
+                for line in f:
+                    if line.strip():
+                        data.append(json.loads(line))
+            self.train_data = data
+            self.test_data = data
+        elif path.endswith('.json'):
+            with open(path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            if isinstance(data, dict) and 'train' in data:
+                self.train_data = data['train']
+                self.test_data = data.get('test', data['train'])
+            else:
+                self.train_data = data
+                self.test_data = data
+        elif path.endswith('.parquet'):
+            ds = load_dataset('parquet', data_files=path, split='train')
+            all_data = [x for x in ds]
+            self.train_data = all_data
+            self.test_data = all_data
+        else:
+            # Try loading as a HuggingFace dataset name (e.g. "openai/gsm8k")
+            try:
+                ds = load_dataset(path, 'main')
+                self.train_data = [x for x in ds['train']]
+                self.test_data = [x for x in ds['test']]
+            except Exception as e:
+                raise ValueError(
+                    f"Cannot load GSM8K data from: {path}. Error: {e}"
+                ) from e
+
+        random.seed(self.random_seed)
+        random.shuffle(self.test_data)
+
+    def _format_fewshot_prompt(self, test_question: str) -> str:
+        """
+        Build a few-shot prompt following the lm-evaluation-harness format:
+          Question: <q>
+          Answer: <a>
+          ...
+          Question: <test_q>
+          Answer:
+        """
+        # Select fewshot examples from train split
+        fewshot_examples = self.train_data[:self.num_fewshot]
+
+        prompt_parts = []
+        for ex in fewshot_examples:
+            q = ex['question']
+            a = ex['answer']
+            prompt_parts.append(f"Question: {q}\nAnswer: {a}")
+
+        # Append the test question
+        prompt_parts.append(f"Question: {test_question}\nAnswer:")
+
+        return "\n\n".join(prompt_parts)
+
+    def sample(
+        self,
+        tokenizer: PreTrainedTokenizerBase,
+        num_requests: int,
+        output_len: Optional[int] = None,
+        **kwargs,
+    ) -> list[SampleRequest]:
+        samples: list[SampleRequest] = []
+        default_output_len = output_len if output_len is not None else 256
+
+        for entry in self.test_data:
+            if len(samples) >= num_requests:
+                break
+
+            question = entry['question']
+            prompt = self._format_fewshot_prompt(question)
+            prompt_ids = tokenizer(prompt).input_ids
+            prompt_len = len(prompt_ids)
+
+            samples.append(
+                SampleRequest(
+                    prompt=prompt,
+                    prompt_len=prompt_len,
+                    expected_output_len=default_output_len,
+                )
+            )
+
+        self.maybe_oversample_requests(samples, num_requests)
+        return samples
+
+
+
+# -----------------------------------------------------------------------------
 # ShareGPT Dataset Implementation
 # -----------------------------------------------------------------------------
 
