@@ -186,7 +186,7 @@ class BenchmarkDataset(ABC):
             requests (List[SampleRequest]): The current list of sampled
             requests.  num_requests (int): The target number of requests.
         """
-        if len(requests) < num_requests:
+        if len(requests) < num_requests: 
             random.seed(self.random_seed)
             additional = random.choices(requests, k=num_requests - len(requests))
             requests.extend(additional)
@@ -563,7 +563,8 @@ class GSM8KDataset(BenchmarkDataset):
         random.seed(self.random_seed)
         random.shuffle(self.test_data)
 
-    def _format_fewshot_prompt(self, test_question: str) -> str:
+    def _format_fewshot_prompt(self, test_question: str,
+                              fewshot_examples: list[dict]) -> str:
         """
         Build a few-shot prompt following the lm-evaluation-harness format:
           Question: <q>
@@ -572,9 +573,6 @@ class GSM8KDataset(BenchmarkDataset):
           Question: <test_q>
           Answer:
         """
-        # Select fewshot examples from train split
-        fewshot_examples = self.train_data[:self.num_fewshot]
-
         prompt_parts = []
         for ex in fewshot_examples:
             q = ex['question']
@@ -595,13 +593,30 @@ class GSM8KDataset(BenchmarkDataset):
     ) -> list[SampleRequest]:
         samples: list[SampleRequest] = []
         default_output_len = output_len if output_len is not None else 256
+        rng = random.Random(self.random_seed)
 
-        for entry in self.test_data:
+        # If num_requests > test set size, cycle through test data
+        test_indices = list(range(len(self.test_data)))
+        if num_requests > len(test_indices):
+            # Repeat and reshuffle to cover num_requests
+            full_indices = []
+            while len(full_indices) < num_requests:
+                rng.shuffle(test_indices)
+                full_indices.extend(test_indices)
+            test_indices = full_indices[:num_requests]
+
+        for i, idx in enumerate(test_indices):
             if len(samples) >= num_requests:
                 break
 
+            entry = self.test_data[idx]
             question = entry['question']
-            prompt = self._format_fewshot_prompt(question)
+
+            # Randomly sample few-shot examples from train for each request
+            fewshot_examples = rng.sample(self.train_data,
+                                          min(self.num_fewshot,
+                                              len(self.train_data)))
+            prompt = self._format_fewshot_prompt(question, fewshot_examples)
             prompt_ids = tokenizer(prompt).input_ids
             prompt_len = len(prompt_ids)
 
@@ -613,7 +628,6 @@ class GSM8KDataset(BenchmarkDataset):
                 )
             )
 
-        self.maybe_oversample_requests(samples, num_requests)
         return samples
 
 
